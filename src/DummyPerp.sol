@@ -5,7 +5,7 @@ pragma solidity 0.8.20;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AggregatorV3Interface} from "./oracle/AggregatorV3Interface.sol";
-
+import {Pool} from "./Pool.sol";
 
     // @param account account the position's account
     // @param isLong whether the position is a long or short
@@ -27,10 +27,12 @@ contract DummyPerp {
     error AlreadyExistPosition();
     error NotExistPosition();
     error ExceedMaximumLeverag();
+    error ExceedMaximumUtilizeLiquidity();
 
     mapping(address => Position) public positions;
 
     IERC20 public asset;
+    Pool pool;
 
     uint8 public constant MAXIMUM_LEVERAGE = 15;
     uint8 public constant MAX_UTILIZATIONPERCENTAGE = 80;
@@ -43,15 +45,27 @@ contract DummyPerp {
     uint256 public totalOpenInterestShortInUsd;
 
     AggregatorV3Interface priceFeed;
-
+    
     constructor(address _asset, address _priceFeed) {
         if(_asset == address(0) || _priceFeed == address(0)) revert ZeroInput();
 
         asset = IERC20(_asset);
         priceFeed = AggregatorV3Interface(_priceFeed);
+        pool = new Pool(address(this), _asset);
     }
 
-    function openPostion(uint256 _sizeInTokens, uint256 _collateralAmount, bool _isLong) external {
+
+    modifier checkLiquidity() {
+        _;
+        if (
+            totalOpenInterestShortInUsd > getMaxUtilizeLiquidity() ||
+            totalOpenInterestLongInUsd > getMaxUtilizeLiquidity()
+        ) {
+            revert ExceedMaximumUtilizeLiquidity();
+        }
+    }
+
+    function openPostion(uint256 _sizeInTokens, uint256 _collateralAmount, bool _isLong) external checkLiquidity {
         if (positions[msg.sender].isOpen) revert AlreadyExistPosition();
         if(_sizeInTokens == 0 || _collateralAmount == 0) revert ZeroInput();
 
@@ -78,7 +92,7 @@ contract DummyPerp {
         }
     }
 
-    function increasePostion(uint256 _sizeInTokensAmout) external {
+    function increasePostion(uint256 _sizeInTokensAmout) external checkLiquidity {
         if(_sizeInTokensAmout == 0) revert ZeroInput();
         Position memory oldPosition = positions[msg.sender];
         if (!oldPosition.isOpen) revert NotExistPosition();
@@ -124,7 +138,6 @@ contract DummyPerp {
         return uint256(price);
     }
 
-
     function calulateTotalPnlOfLong() public view returns (int) {
         uint256 currentLongOpenInterestUsd = (getBTCLatestPrice() * totalOpenInterestShortInTokens) / FEED_PRICE_PRECISION;
         return int(currentLongOpenInterestUsd - totalOpenInterestLongInUsd);
@@ -153,9 +166,12 @@ contract DummyPerp {
         }
         return PnL;
     }
-
     function calculateMaximumPossibleProfit() public view returns (uint256) {
         uint256 btcPrice = getBTCLatestPrice();
         return totalOpenInterestShortInUsd + (totalOpenInterestLongInTokens * btcPrice) / FEED_PRICE_PRECISION;
+    }
+
+    function getMaxUtilizeLiquidity() public view returns (uint256) {
+        return (pool.totalAssets() * MAX_UTILIZATIONPERCENTAGE / 100);
     }
 }
