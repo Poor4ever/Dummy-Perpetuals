@@ -21,4 +21,8 @@ contract Pool is ERC4626 {
             return _totalAssets - lockupProfitAmount;
         }
     }
+
+    function maxRedeem(address owner) public view override returns (uint256) {
+        return convertToShares(maxWithdraw(msg.sender));
+    }
 }
