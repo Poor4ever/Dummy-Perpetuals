@@ -45,14 +45,16 @@ contract DummyPerp {
     AggregatorV3Interface priceFeed;
 
     constructor(address _asset, address _priceFeed) {
+        if(_asset == address(0) || _priceFeed == address(0)) revert ZeroInput();
+
         asset = IERC20(_asset);
         priceFeed = AggregatorV3Interface(_priceFeed);
     }
 
-
     function openPostion(uint256 _sizeInTokens, uint256 _collateralAmount, bool _isLong) external {
         if (positions[msg.sender].isOpen) revert AlreadyExistPosition();
-        require(_sizeInTokens != 0 && _collateralAmount != 0, "Invalid Param");
+        if(_sizeInTokens == 0 || _collateralAmount == 0) revert ZeroInput();
+
         uint256 btcPrice = getBTCLatestPrice();
         uint256 sizeInUsd = (_sizeInTokens * btcPrice) / FEED_PRICE_PRECISION;
         if (sizeInUsd / _collateralAmount > MAXIMUM_LEVERAGE) revert ExceedMaximumLeverag();
@@ -101,8 +103,15 @@ contract DummyPerp {
             newPostionSizeInUsd,
             oldPosition.collateralAmount
         );
-
         }
+
+    function increaseCollateral(uint256 _collateralAmount) external {
+        if(_collateralAmount == 0) revert ZeroInput();
+        if(!positions[msg.sender].isOpen) revert NotExistPosition();
+
+        asset.safeTransferFrom(msg.sender, address(this), _collateralAmount);
+        positions[msg.sender].collateralAmount += _collateralAmount;
+    }
 
     function getBTCLatestPrice() public view returns (uint256) {
         (
