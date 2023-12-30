@@ -1,66 +1,25 @@
-## Foundry
+# Dummy Perpetuals
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+![Dummy-Perpetuals](./images/Dummy-Perpetuals.jpg)
 
-Foundry consists of:
+## About
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+This is an implementation of [Mission #1](https://guardianaudits.notion.site/Mission-1-Perpetuals-028ca44faa264d679d6789d5461cfb13) for the [Gateway Web3 Security Course](https://guardianaudits.notion.site/guardianaudits/Gateway-Free-Web3-Security-Course-574f4d819c144d7895cda6d61ba26503)
 
-## Documentation
+The first mission focuses on implementing roughly 50% of the basic functionality of a decentralized perpetuals protocol.
 
-https://book.getfoundry.sh/
+## Overview
 
-## Usage
+The protocol allows users to use USDC as collateral to open long or short positions with a maximum leverage of up to 15x
 
-### Build
+## ToDo List
 
-```shell
-$ forge build
-```
-
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+| functionality                                                | implementation | Testing |
+| ------------------------------------------------------------ | -------------- | ------- |
+| Liquidity Providers can deposit and withdraw liquidity.      |                |         |
+| A way to get the realtime price of the asset being traded.   | ✅              |         |
+| Traders can open a perpetual position for BTC, with a given size and collateral. | ✅              |         |
+| Traders can increase the size of a perpetual position.       |                |         |
+| Traders can increase the collateral of a perpetual position. |                |         |
+| Traders cannot utilize more than a configured percentage of the deposited liquidity. |                |         |
+| Liquidity providers cannot withdraw liquidity that is reserved for positions. |                |         |
