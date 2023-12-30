@@ -23,8 +23,10 @@ import {AggregatorV3Interface} from "./oracle/AggregatorV3Interface.sol";
 contract DummyPerp {
     using SafeERC20 for IERC20;
 
+    error ZeroInput();
     error AlreadyExistPosition();
-    error ExceedingMaximumLeverag();
+    error NotExistPosition();
+    error ExceedMaximumLeverag();
 
     mapping(address => Position) public positions;
 
@@ -40,8 +42,6 @@ contract DummyPerp {
     uint256 public totalOpenInterestShortInTokens;
     uint256 public totalOpenInterestShortInUsd;
 
-
-
     AggregatorV3Interface priceFeed;
 
     constructor(address _asset, address _priceFeed) {
@@ -55,7 +55,7 @@ contract DummyPerp {
         require(_sizeInTokens != 0 && _collateralAmount != 0, "Invalid Param");
         uint256 btcPrice = getBTCLatestPrice();
         uint256 sizeInUsd = (_sizeInTokens * btcPrice) / FEED_PRICE_PRECISION;
-        if (sizeInUsd / _collateralAmount > MAXIMUM_LEVERAGE) revert ExceedingMaximumLeverag();
+        if (sizeInUsd / _collateralAmount > MAXIMUM_LEVERAGE) revert ExceedMaximumLeverag();
         
         asset.safeTransferFrom(msg.sender, address(this), _collateralAmount);
 
@@ -76,8 +76,33 @@ contract DummyPerp {
         }
     }
 
-    function closePosition() external {
-    }
+    function increasePostion(uint256 _sizeInTokensAmout) external {
+        if(_sizeInTokensAmout == 0) revert ZeroInput();
+        Position memory oldPosition = positions[msg.sender];
+        if (!oldPosition.isOpen) revert NotExistPosition();
+
+        uint256 btcPrice = getBTCLatestPrice();
+        uint256 currentPostionValue = (btcPrice * oldPosition.sizeInTokens) / FEED_PRICE_PRECISION;
+        uint256 newPostionSizeInUsd = currentPostionValue + (_sizeInTokensAmout * btcPrice) / FEED_PRICE_PRECISION;
+        if (newPostionSizeInUsd / oldPosition.collateralAmount > MAXIMUM_LEVERAGE) revert ExceedMaximumLeverag();
+    
+        if (oldPosition.isLong) {
+            totalOpenInterestLongInTokens += _sizeInTokensAmout;
+           totalOpenInterestLongInUsd += newPostionSizeInUsd;
+        } else {
+            totalOpenInterestShortInTokens += _sizeInTokensAmout;
+            totalOpenInterestShortInUsd += newPostionSizeInUsd;
+        }
+
+        positions[msg.sender] = Position(
+            true,
+            oldPosition.isOpen,
+            oldPosition.sizeInTokens += _sizeInTokensAmout,
+            newPostionSizeInUsd,
+            oldPosition.collateralAmount
+        );
+
+        }
 
     function getBTCLatestPrice() public view returns (uint256) {
         (
@@ -90,17 +115,32 @@ contract DummyPerp {
         return uint256(price);
     }
 
-    function calculatePnL(address who) public view returns (int) {
-        Position memory position = positions[who];
-        uint256 currentValue = getBTCLatestPrice() * position.sizeInTokens / FEED_PRICE_PRECISION;
+
+    function calulateTotalPnlOfLong() public view returns (int) {
+        uint256 currentLongOpenInterestUsd = (getBTCLatestPrice() * totalOpenInterestShortInTokens) / FEED_PRICE_PRECISION;
+        return int(currentLongOpenInterestUsd - totalOpenInterestLongInUsd);
+    }
+
+    function calulateTotalPnlOfShort() public view returns (int) {
+        uint256 currentShortOpenInterestUsd = (getBTCLatestPrice() * totalOpenInterestShortInTokens) / FEED_PRICE_PRECISION;
+        return int(totalOpenInterestShortInUsd - currentShortOpenInterestUsd);
+    }
+
+    function calulateTotalPnLOfTraders() public view returns (int) {
+        return calulateTotalPnlOfLong() + calulateTotalPnlOfShort();
+    }
+
+    function calculatePnLOfTrader(address who) public view returns (int) {
+        Position memory _position = positions[who];
+        uint256 currentValue = (getBTCLatestPrice() * _position.sizeInTokens) / FEED_PRICE_PRECISION;
         int PnL = 0;
 
-        if(!position.isOpen) {
+        if(!_position.isOpen) {
             return PnL;
-        } else if(position.isLong) {
-            PnL = int(currentValue - position.sizeInUsd);
+        } else if(_position.isLong) {
+            PnL = int(currentValue - _position.sizeInUsd);
         } else {
-            PnL = int(position.sizeInUsd - currentValue);
+            PnL = int(_position.sizeInUsd - currentValue);
         }
         return PnL;
     }
