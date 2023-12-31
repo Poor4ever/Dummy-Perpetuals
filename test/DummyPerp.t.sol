@@ -52,6 +52,26 @@ contract DummyPerpTest is Test {
         }
     }
 
+    function testOpenPostion(uint sizeInTokenAmount, uint collateralAmount, bool isLong) public {
+        sizeInTokenAmount = bound(sizeInTokenAmount, 1, 10000);
+        int btcPrice = 50000e8;
+        uint collateralAmountMin = uint(btcPrice) * sizeInTokenAmount * dummyPerp.MAXIMUM_LEVERAGE();
+   
+        uint maxUtilizeliquidity = collateralAmountMin * dummyPerp.MAX_UTILIZATIONPERCENTAGE();
+        
+        vm.assume(collateralAmount > collateralAmountMin);
+        liquidityProvidersDeposit(liquidityProviders, collateralAmountMin / liquidityProviders.length + 1);
+
+        priceFeed.changeBTCPrice(btcPrice);
+
+        address treader = traders[0];
+        asset.mint(treader, collateralAmount);
+        vm.startPrank(treader);
+        asset.approve(address(dummyPerp), collateralAmount);
+        dummyPerp.openPostion(sizeInTokenAmount, collateralAmount, isLong);
+        vm.stopPrank();
+    }
+
 
     function testOraclePriceFeed(int pric) public {
         int price = bound(pric,43000, 45000) * 1e8;
@@ -67,6 +87,17 @@ contract DummyPerpTest is Test {
         for (uint160 index; index < Num; index++) {
             traders[index] = address(index + 666);
             liquidityProviders[index] = address(index + 999);
+        }
+    }
+
+    function liquidityProvidersDeposit(address[] memory _liquidityProviders, uint amount) internal {
+        for (uint index; index < _liquidityProviders.length; index++) {
+            address currentTrader = _liquidityProviders[index];
+            deal(address(asset), currentTrader, amount);
+            vm.startPrank(currentTrader);
+            asset.approve(address(pool), amount);
+            pool.deposit(amount, currentTrader);
+            vm.stopPrank();
         }
     }
 }
