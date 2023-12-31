@@ -7,7 +7,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {AggregatorV3Interface} from "./oracle/AggregatorV3Interface.sol";
 import {Pool} from "./Pool.sol";
 
-    // @param account account the position's account
+    // @param isOpen position's status
     // @param isLong whether the position is a long or short
     // @param sizeInUsd the position's size in USD (USDC)
     // @param sizeInTokens the position's size in tokens (BTC)
@@ -57,9 +57,10 @@ contract DummyPerp {
 
     modifier checkLiquidity() {
         _;
+        uint256 maxUtilizeLiquidity = getMaxUtilizeLiquidity();
         if (
-            totalOpenInterestShortInUsd > getMaxUtilizeLiquidity() ||
-            totalOpenInterestLongInUsd > getMaxUtilizeLiquidity()
+            totalOpenInterestShortInUsd > maxUtilizeLiquidity ||
+            totalOpenInterestLongInUsd > maxUtilizeLiquidity
         ) {
             revert ExceedMaximumUtilizeLiquidity();
         }
