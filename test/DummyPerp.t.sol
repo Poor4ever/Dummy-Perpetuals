@@ -52,24 +52,26 @@ contract DummyPerpTest is Test {
         }
     }
 
-    function testOpenPostion(uint sizeInTokenAmount, uint collateralAmount, bool isLong) public {
+    function testOpenPostion(uint sizeInTokenAmount, uint collateralAmount, uint depositLiquidityAmount, bool isLong) public {  
         sizeInTokenAmount = bound(sizeInTokenAmount, 1, 10000);
-        int btcPrice = 50000e8;
+        vm.assume(depositLiquidityAmount < type(uint160).max);
+        vm.assume(collateralAmount > 0 &&  collateralAmount < type(uint256).max / 15);
+        liquidityProvidersDeposit(liquidityProviders, depositLiquidityAmount / liquidityProviders.length);
+        int btcPrice = 50000;
+        priceFeed.changeBTCPrice(btcPrice * 1e8);
         uint collateralAmountMin = uint(btcPrice) * sizeInTokenAmount * dummyPerp.MAXIMUM_LEVERAGE();
-   
-        uint maxUtilizeliquidity = collateralAmountMin * dummyPerp.MAX_UTILIZATIONPERCENTAGE();
-        
-        vm.assume(collateralAmount > collateralAmountMin);
-        liquidityProvidersDeposit(liquidityProviders, collateralAmountMin / liquidityProviders.length + 1);
-
-        priceFeed.changeBTCPrice(btcPrice);
-
+        uint postionSizeInusd = uint(btcPrice) * sizeInTokenAmount;
+        uint maxUtilizeliquidity = pool.totalAssets() * dummyPerp.MAX_UTILIZATIONPERCENTAGE() / 100;
+        uint maxpositionValue = collateralAmount * dummyPerp.MAXIMUM_LEVERAGE();
+       
         address treader = traders[0];
         asset.mint(treader, collateralAmount);
         vm.startPrank(treader);
         asset.approve(address(dummyPerp), collateralAmount);
+        if(postionSizeInusd > maxUtilizeliquidity || postionSizeInusd > maxpositionValue) vm.expectRevert();
         dummyPerp.openPostion(sizeInTokenAmount, collateralAmount, isLong);
         vm.stopPrank();
+   
     }
 
 
