@@ -14,7 +14,7 @@ contract Pool is ERC4626 {
 
     function maxWithdraw(address liquidityProvider) public view override returns (uint256) {
         uint256 _totalAssets = totalAssets();
-        uint256 lockupProfitAmount = (dummyPerp.calculateMaximumPossibleProfit() * 100) / dummyPerp.MAX_UTILIZATIONPERCENTAGE();
+        uint256 lockupProfitAmount = (dummyPerp.calculateMaximumPossibleProfit() * dummyPerp.MAX_UTILIZATIONPERCENTAGE()) / 100;
         if (_totalAssets < lockupProfitAmount) {
             return 0;
         } else {
