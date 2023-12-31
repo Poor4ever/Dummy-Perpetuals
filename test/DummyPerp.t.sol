@@ -64,14 +64,21 @@ contract DummyPerpTest is Test {
         uint maxUtilizeliquidity = pool.totalAssets() * dummyPerp.MAX_UTILIZATIONPERCENTAGE() / 100;
         uint maxpositionValue = collateralAmount * dummyPerp.MAXIMUM_LEVERAGE();
        
-        address treader = traders[0];
-        asset.mint(treader, collateralAmount);
-        vm.startPrank(treader);
+        address trader = traders[0];
+        asset.mint(trader, collateralAmount);
+        vm.startPrank(trader);
         asset.approve(address(dummyPerp), collateralAmount);
         if(postionSizeInusd > maxUtilizeliquidity || postionSizeInusd > maxpositionValue) vm.expectRevert();
         dummyPerp.openPostion(sizeInTokenAmount, collateralAmount, isLong);
         vm.stopPrank();
-   
+
+        (bool isOpen, 
+        bool isLong, 
+        uint256 sizeInTokens, 
+        uint256 sizeInUsd, 
+        uint256 collateralAmount
+        ) = dummyPerp.positions(trader);
+        if (isOpen) assertLe(sizeInUsd / collateralAmount, 15);
     }
 
 

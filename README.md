@@ -23,3 +23,6 @@ The protocol allows users to use USDC as collateral to open long or short positi
 | Traders can increase the collateral of a perpetual position. | ✅              |         |
 | Traders cannot utilize more than a configured percentage of the deposited liquidity. | ✅              |         |
 | Liquidity providers cannot withdraw liquidity that is reserved for positions. | ✅              |         |
+
+## Know Issues 
+Precision Loss
