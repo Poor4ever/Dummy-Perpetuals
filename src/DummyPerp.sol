@@ -32,7 +32,7 @@ contract DummyPerp {
     mapping(address => Position) public positions;
 
     IERC20 public asset;
-    Pool pool;
+    Pool public pool;
 
     uint8 public constant MAXIMUM_LEVERAGE = 15;
     uint8 public constant MAX_UTILIZATIONPERCENTAGE = 80;

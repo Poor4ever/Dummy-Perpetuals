@@ -5,6 +5,7 @@ interface IDummyPerp {
     error AddressInsufficientBalance(address account);
     error AlreadyExistPosition();
     error ExceedMaximumLeverag();
+    error ExceedMaximumUtilizeLiquidity();
     error FailedInnerCall();
     error NotExistPosition();
     error SafeERC20FailedOperation(address token);
@@ -21,9 +22,11 @@ interface IDummyPerp {
     function calulateTotalPnlOfLong() external view returns (int256);
     function calulateTotalPnlOfShort() external view returns (int256);
     function getBTCLatestPrice() external view returns (uint256);
+    function getMaxUtilizeLiquidity() external view returns (uint256);
     function increaseCollateral(uint256 _collateralAmount) external;
     function increasePostion(uint256 _sizeInTokensAmout) external;
     function openPostion(uint256 _sizeInTokens, uint256 _collateralAmount, bool _isLong) external;
+    function pool() external view returns (address);
     function positions(address)
         external
         view
