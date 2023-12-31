@@ -17,7 +17,7 @@ The protocol allows users to use USDC as collateral to open long or short positi
 | functionality                                                | implementation | Testing |
 | ------------------------------------------------------------ | -------------- | ------- |
 | Liquidity Providers can deposit and withdraw liquidity.      | ✅              |         |
-| A way to get the realtime price of the asset being traded.   | ✅              |         |
+| A way to get the realtime price of the asset being traded.   | ✅              | ✅       |
 | Traders can open a perpetual position for BTC, with a given size and collateral. | ✅              |         |
 | Traders can increase the size of a perpetual position.       | ✅              |         |
 | Traders can increase the collateral of a perpetual position. | ✅              |         |

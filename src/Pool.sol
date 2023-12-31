@@ -12,7 +12,7 @@ contract Pool is ERC4626 {
         dummyPerp = IDummyPerp(_dummyPerp);
     }
 
-    function maxWithdraw(address owner) public view override returns (uint256) {
+    function maxWithdraw(address liquidityProvider) public view override returns (uint256) {
         uint256 _totalAssets = totalAssets();
         uint256 lockupProfitAmount = (dummyPerp.calculateMaximumPossibleProfit() * 100) / dummyPerp.MAX_UTILIZATIONPERCENTAGE();
         if (_totalAssets < lockupProfitAmount) {
@@ -22,7 +22,7 @@ contract Pool is ERC4626 {
         }
     }
 
-    function maxRedeem(address owner) public view override returns (uint256) {
-        return convertToShares(maxWithdraw(msg.sender));
+    function maxRedeem(address liquidityProvider) public view override returns (uint256) {
+        return convertToShares(maxWithdraw(liquidityProvider));
     }
 }
