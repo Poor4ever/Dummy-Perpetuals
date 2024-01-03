@@ -140,7 +140,7 @@ contract DummyPerp {
     }
 
     function calulateTotalPnlOfLong() public view returns (int) {
-        uint256 currentLongOpenInterestUsd = (getBTCLatestPrice() * totalOpenInterestShortInTokens) / FEED_PRICE_PRECISION;
+        uint256 currentLongOpenInterestUsd = (getBTCLatestPrice() * totalOpenInterestLongInTokens) / FEED_PRICE_PRECISION;
         return int(currentLongOpenInterestUsd - totalOpenInterestLongInUsd);
     }
 
@@ -167,6 +167,7 @@ contract DummyPerp {
         }
         return PnL;
     }
+
     function calculateMaximumPossibleProfit() public view returns (uint256) {
         uint256 btcPrice = getBTCLatestPrice();
         return totalOpenInterestShortInUsd + (totalOpenInterestLongInTokens * btcPrice) / FEED_PRICE_PRECISION;
