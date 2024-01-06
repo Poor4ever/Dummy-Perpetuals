@@ -34,7 +34,8 @@ contract DummyPerp {
     IERC20 public asset;
     Pool public pool;
 
-    uint8 public constant MAXIMUM_LEVERAGE = 15;
+    uint public constant BASIS_POINTS_DIVISOR = 10000;
+    uint public constant MAXIMUM_LEVERAGE = 15 * BASIS_POINTS_DIVISOR;
     uint8 public constant MAX_UTILIZATIONPERCENTAGE = 80;
     uint public constant USDC_PRECISION = 1e6;
     uint public constant FEED_PRICE_PRECISION = 1e8;
@@ -72,7 +73,7 @@ contract DummyPerp {
 
         uint256 btcPrice = getBTCLatestPrice();
         uint256 sizeInUsd = (_sizeInTokens * btcPrice) / FEED_PRICE_PRECISION;
-        if (sizeInUsd / _collateralAmount > MAXIMUM_LEVERAGE) revert ExceedMaximumLeverag();
+        if ((_sizeInTokens * btcPrice * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION > _collateralAmount * MAXIMUM_LEVERAGE) revert ExceedMaximumLeverag();
         
         asset.safeTransferFrom(msg.sender, address(this), _collateralAmount);
 

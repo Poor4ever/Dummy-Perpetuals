@@ -55,7 +55,7 @@ contract DummyPerpTest is Test {
     function testOpenPostion(uint sizeInTokenAmount, uint collateralAmount, uint depositLiquidityAmount, bool isLong) public {  
         sizeInTokenAmount = bound(sizeInTokenAmount, 1, 10000);
         vm.assume(depositLiquidityAmount < type(uint160).max);
-        vm.assume(collateralAmount > 0 &&  collateralAmount < type(uint256).max / 15);
+        vm.assume(collateralAmount > 0 &&  collateralAmount < type(uint256).max / dummyPerp.MAXIMUM_LEVERAGE());
         liquidityProvidersDeposit(liquidityProviders, depositLiquidityAmount / liquidityProviders.length);
         int btcPrice = 50000;
         priceFeed.changeBTCPrice(btcPrice * 1e8);
@@ -68,7 +68,7 @@ contract DummyPerpTest is Test {
         asset.mint(trader, collateralAmount);
         vm.startPrank(trader);
         asset.approve(address(dummyPerp), collateralAmount);
-        if(postionSizeInusd > maxUtilizeliquidity || postionSizeInusd > maxpositionValue) vm.expectRevert();
+        if(postionSizeInusd > maxUtilizeliquidity || postionSizeInusd * dummyPerp.BASIS_POINTS_DIVISOR() > maxpositionValue) vm.expectRevert();
         dummyPerp.openPostion(sizeInTokenAmount, collateralAmount, isLong);
         vm.stopPrank();
 
@@ -78,7 +78,10 @@ contract DummyPerpTest is Test {
         uint256 sizeInUsd, 
         uint256 collateralAmount
         ) = dummyPerp.positions(trader);
-        if (isOpen) assertLe(sizeInUsd / collateralAmount, 15);
+        if (isOpen) {
+            assertLe(sizeInUsd / collateralAmount, 15);
+            assertLe(sizeInUsd, maxpositionValue);
+        }
     }
 
 
