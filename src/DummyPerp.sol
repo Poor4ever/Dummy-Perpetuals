@@ -4,6 +4,7 @@ pragma solidity 0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import {AggregatorV3Interface} from "./oracle/AggregatorV3Interface.sol";
 import {Pool} from "./Pool.sol";
 
@@ -22,12 +23,14 @@ import {Pool} from "./Pool.sol";
 
 contract DummyPerp {
     using SafeERC20 for IERC20;
+    using SignedMath for int;
 
     error ZeroInput();
     error AlreadyExistPosition();
     error NotExistPosition();
     error ExceedMaximumLeverag();
     error ExceedMaximumUtilizeLiquidity();
+    error InsufficientCollateral();
 
     mapping(address => Position) public positions;
 
@@ -94,7 +97,7 @@ contract DummyPerp {
         }
     }
 
-    function increasePostion(uint256 _sizeInTokensAmout) external checkLiquidity {
+    function increasePostionSize(uint256 _sizeInTokensAmout) external checkLiquidity {
         if(_sizeInTokensAmout == 0) revert ZeroInput();
         Position memory oldPosition = positions[msg.sender];
         if (!oldPosition.isOpen) revert NotExistPosition();
@@ -127,6 +130,39 @@ contract DummyPerp {
 
         asset.safeTransferFrom(msg.sender, address(this), _collateralAmount);
         positions[msg.sender].collateralAmount += _collateralAmount;
+    }
+
+
+    function decreasePositionSize(uint256 _sizeInTokensAmout) external {
+        if(_sizeInTokensAmout == 0) revert ZeroInput();
+        Position memory oldPosition = positions[msg.sender];
+
+        int totalPnl = calculatePnLOfTrader(msg.sender);
+        int realizedPnl = totalPnl * int(_sizeInTokensAmout) / int(oldPosition.sizeInTokens);
+
+        if(realizedPnl > 0) {
+            asset.safeTransfer(msg.sender, uint256(realizedPnl) * USDC_PRECISION);
+        }else {
+            asset.safeTransfer(msg.sender, realizedPnl.abs() * USDC_PRECISION);
+        }
+
+         if (oldPosition.isLong) {
+            totalOpenInterestLongInTokens += _sizeInTokensAmout;
+           totalOpenInterestLongInUsd += newPostionSizeInUsd;
+        } else {
+            totalOpenInterestShortInTokens += _sizeInTokensAmout;
+            totalOpenInterestShortInUsd += newPostionSizeInUsd;
+        }
+    }
+
+    function decreasePositionCollateral(uint256 _collateralAmount) external {
+        if (_collateralAmount == 0) revert ZeroInput();
+        Position memory oldPosition = positions[msg.sender];
+        uint currentBtcPrice = getBTCLatestPrice();
+        if (((oldPosition.collateralAmount - _collateralAmount)  * MAXIMUM_LEVERAGE) < (oldPosition.sizeInTokens * currentBtcPrice * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION) revert InsufficientCollateral();
+        
+        positions[msg.sender].collateralAmount -= _collateralAmount;
+        asset.safeTransfer(msg.sender, _collateralAmount);
     }
 
     function getBTCLatestPrice() public view returns (uint256) {
