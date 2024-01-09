@@ -43,6 +43,7 @@ contract DummyPerp {
     uint8 public constant MAX_UTILIZATIONPERCENTAGE = 80;
     uint public constant USDC_PRECISION = 1e6;
     uint public constant FEED_PRICE_PRECISION = 1e8;
+    uint public constant LIQUIDATION_FEE_PERCENTAGE = 10;
 
     uint256 public totalOpenInterestLongInTokens;
     uint256 public totalOpenInterestLongInUsd;
@@ -81,7 +82,7 @@ contract DummyPerp {
         
         asset.safeTransferFrom(msg.sender, address(this), _collateralAmount);
 
-        increaseTotalOpenInterest(_sizeInTokensAmount, sizeInUsd, _isLong);
+        _increaseTotalOpenInterest(_sizeInTokensAmount, sizeInUsd, _isLong);
 
         positions[msg.sender] = Position(
             true,
@@ -103,7 +104,7 @@ contract DummyPerp {
         uint256 currentPostionValue = (btcPrice * oldPosition.sizeInTokens) / FEED_PRICE_PRECISION;
         uint256 newPostionSizeInUsd = currentPostionValue + (_sizeInTokensAmount * btcPrice) / FEED_PRICE_PRECISION;
 
-        increaseTotalOpenInterest(_sizeInTokensAmount, newPostionSizeInUsd, oldPosition.isLong);
+        _increaseTotalOpenInterest(_sizeInTokensAmount, newPostionSizeInUsd, oldPosition.isLong);
 
         positions[msg.sender] = Position(
             true,
@@ -112,7 +113,7 @@ contract DummyPerp {
             newPostionSizeInUsd,
             oldPosition.collateralAmount
         );
-        
+
         if(isExceedMaxLeverage(msg.sender)) revert ExceedMaximumLeverage();
     }
 
@@ -137,13 +138,13 @@ contract DummyPerp {
         positions[msg.sender].sizeInTokens -= _sizeInTokensAmout;
         positions[msg.sender].sizeInUsd -= sizeInUsd;
         
-        decreaseTotalOpenInterest(sizeInUsd, _sizeInTokensAmout, oldPosition.isLong);
+        _decreaseTotalOpenInterest(sizeInUsd, _sizeInTokensAmout, oldPosition.isLong);
 
         if(isExceedMaxLeverage(msg.sender)) revert InsufficientCollateral();
         
         if(realizedPnl > 0) {
             asset.safeTransfer(msg.sender, uint256(realizedPnl) * USDC_PRECISION);
-        }else {
+        } else {
             asset.safeTransfer(address(pool), realizedPnl.abs() * USDC_PRECISION);
         }
     }
@@ -153,8 +154,6 @@ contract DummyPerp {
         if(!positions[msg.sender].isOpen) revert NotExistPosition();
 
         uint currentBtcPrice = getBTCLatestPrice();
-        
-        
         positions[msg.sender].collateralAmount -= _collateralAmount;
        
         if(isExceedMaxLeverage(msg.sender)) revert InsufficientCollateral();
@@ -162,7 +161,25 @@ contract DummyPerp {
         asset.safeTransfer(msg.sender, _collateralAmount);
     }
 
+    function liquidatePosition(address _account) external {
+        if(!isExceedMaxLeverage(_account)) revert NonLiquidable();
+        Position memory tempPositon = positions[_account];
 
+        int pnl = calculatePnLOfTrader(_account);
+        
+        if(tempPositon.collateralAmount < pnl.abs()) {
+            uint256 liquditionFee = (tempPositon.collateralAmount * LIQUIDATION_FEE_PERCENTAGE * USDC_PRECISION) / 100;
+            asset.safeTransfer(msg.sender, liquditionFee);
+            asset.safeTransfer(address(pool), tempPositon.collateralAmount * USDC_PRECISION - liquditionFee);
+        } else {
+            uint256 liquditionFee = (pnl.abs() * LIQUIDATION_FEE_PERCENTAGE * USDC_PRECISION) / 100;
+            asset.safeTransfer(msg.sender, liquditionFee);
+            asset.safeTransfer(address(pool), pnl.abs() * USDC_PRECISION - liquditionFee);
+            asset.safeTransfer(_account, tempPositon.collateralAmount - pnl.abs());
+        }
+
+        delete positions[_account];
+    }
 
     function isExceedMaxLeverage(address _account) view public returns(bool) {
         Position memory tempPositon = positions[_account];
@@ -176,7 +193,7 @@ contract DummyPerp {
         return tempPositon.collateralAmount * MAXIMUM_LEVERAGE < (tempPositon.sizeInTokens * getBTCLatestPrice() * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION ? true : false;
     }
 
-    function increaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
+    function _increaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
         if(_isLong) {
             totalOpenInterestLongInTokens += _sizeInTokens;
             totalOpenInterestLongInUsd += _sizeInUsd;
@@ -187,7 +204,7 @@ contract DummyPerp {
     }
 
 
-    function decreaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
+    function _decreaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
         if(_isLong) {
             totalOpenInterestLongInTokens -= _sizeInTokens;
             totalOpenInterestLongInUsd -= _sizeInUsd;
