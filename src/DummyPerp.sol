@@ -28,9 +28,10 @@ contract DummyPerp {
     error ZeroInput();
     error AlreadyExistPosition();
     error NotExistPosition();
-    error ExceedMaximumLeverag();
+    error ExceedMaximumLeverage();
     error ExceedMaximumUtilizeLiquidity();
     error InsufficientCollateral();
+    error NonLiquidable();
 
     mapping(address => Position) public positions;
 
@@ -70,59 +71,50 @@ contract DummyPerp {
         }
     }
 
-    function openPostion(uint256 _sizeInTokens, uint256 _collateralAmount, bool _isLong) external checkLiquidity {
+    function openPostion(uint256 _sizeInTokensAmount, uint256 _collateralAmount, bool _isLong) external checkLiquidity {
         if (positions[msg.sender].isOpen) revert AlreadyExistPosition();
-        if(_sizeInTokens == 0 || _collateralAmount == 0) revert ZeroInput();
+        if(_sizeInTokensAmount == 0 || _collateralAmount == 0) revert ZeroInput();
 
         uint256 btcPrice = getBTCLatestPrice();
-        uint256 sizeInUsd = (_sizeInTokens * btcPrice) / FEED_PRICE_PRECISION;
-        if ((_sizeInTokens * btcPrice * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION > _collateralAmount * MAXIMUM_LEVERAGE) revert ExceedMaximumLeverag();
+        uint256 sizeInUsd = (_sizeInTokensAmount * btcPrice) / FEED_PRICE_PRECISION;
+        
         
         asset.safeTransferFrom(msg.sender, address(this), _collateralAmount);
+
+        increaseTotalOpenInterest(_sizeInTokensAmount, sizeInUsd, _isLong);
 
         positions[msg.sender] = Position(
             true,
             _isLong,
-            _sizeInTokens,
+            _sizeInTokensAmount,
             sizeInUsd,
             _collateralAmount
         );
 
-        if (_isLong) {
-           totalOpenInterestLongInTokens += _sizeInTokens;
-           totalOpenInterestLongInUsd += sizeInUsd;
-        } else {
-            totalOpenInterestShortInTokens += _sizeInTokens;
-            totalOpenInterestShortInUsd += sizeInUsd;
-        }
+        if(isExceedMaxLeverage(msg.sender)) revert ExceedMaximumLeverage();
     }
 
-    function increasePostionSize(uint256 _sizeInTokensAmout) external checkLiquidity {
-        if(_sizeInTokensAmout == 0) revert ZeroInput();
+    function increasePostionSize(uint256 _sizeInTokensAmount) external checkLiquidity {
+        if(_sizeInTokensAmount == 0) revert ZeroInput();
         Position memory oldPosition = positions[msg.sender];
         if (!oldPosition.isOpen) revert NotExistPosition();
 
         uint256 btcPrice = getBTCLatestPrice();
         uint256 currentPostionValue = (btcPrice * oldPosition.sizeInTokens) / FEED_PRICE_PRECISION;
-        uint256 newPostionSizeInUsd = currentPostionValue + (_sizeInTokensAmout * btcPrice) / FEED_PRICE_PRECISION;
-        if (newPostionSizeInUsd / oldPosition.collateralAmount > MAXIMUM_LEVERAGE) revert ExceedMaximumLeverag();
-    
-        if (oldPosition.isLong) {
-            totalOpenInterestLongInTokens += _sizeInTokensAmout;
-           totalOpenInterestLongInUsd += newPostionSizeInUsd;
-        } else {
-            totalOpenInterestShortInTokens += _sizeInTokensAmout;
-            totalOpenInterestShortInUsd += newPostionSizeInUsd;
-        }
+        uint256 newPostionSizeInUsd = currentPostionValue + (_sizeInTokensAmount * btcPrice) / FEED_PRICE_PRECISION;
+
+        increaseTotalOpenInterest(_sizeInTokensAmount, newPostionSizeInUsd, oldPosition.isLong);
 
         positions[msg.sender] = Position(
             true,
             oldPosition.isOpen,
-            oldPosition.sizeInTokens += _sizeInTokensAmout,
+            oldPosition.sizeInTokens += _sizeInTokensAmount,
             newPostionSizeInUsd,
             oldPosition.collateralAmount
         );
-        }
+        
+        if(isExceedMaxLeverage(msg.sender)) revert ExceedMaximumLeverage();
+    }
 
     function increaseCollateral(uint256 _collateralAmount) external {
         if(_collateralAmount == 0) revert ZeroInput();
@@ -135,34 +127,74 @@ contract DummyPerp {
 
     function decreasePositionSize(uint256 _sizeInTokensAmout) external {
         if(_sizeInTokensAmout == 0) revert ZeroInput();
+        if(!positions[msg.sender].isOpen) revert NotExistPosition();
         Position memory oldPosition = positions[msg.sender];
 
         int totalPnl = calculatePnLOfTrader(msg.sender);
         int realizedPnl = totalPnl * int(_sizeInTokensAmout) / int(oldPosition.sizeInTokens);
+        uint256 sizeInUsd = (_sizeInTokensAmout * getBTCLatestPrice()) / FEED_PRICE_PRECISION;
+        
+        positions[msg.sender].sizeInTokens -= _sizeInTokensAmout;
+        positions[msg.sender].sizeInUsd -= sizeInUsd;
+        
+        decreaseTotalOpenInterest(sizeInUsd, _sizeInTokensAmout, oldPosition.isLong);
 
+        if(isExceedMaxLeverage(msg.sender)) revert InsufficientCollateral();
+        
         if(realizedPnl > 0) {
             asset.safeTransfer(msg.sender, uint256(realizedPnl) * USDC_PRECISION);
         }else {
-            asset.safeTransfer(msg.sender, realizedPnl.abs() * USDC_PRECISION);
-        }
-
-         if (oldPosition.isLong) {
-            totalOpenInterestLongInTokens += _sizeInTokensAmout;
-           totalOpenInterestLongInUsd += newPostionSizeInUsd;
-        } else {
-            totalOpenInterestShortInTokens += _sizeInTokensAmout;
-            totalOpenInterestShortInUsd += newPostionSizeInUsd;
+            asset.safeTransfer(address(pool), realizedPnl.abs() * USDC_PRECISION);
         }
     }
 
     function decreasePositionCollateral(uint256 _collateralAmount) external {
         if (_collateralAmount == 0) revert ZeroInput();
-        Position memory oldPosition = positions[msg.sender];
+        if(!positions[msg.sender].isOpen) revert NotExistPosition();
+
         uint currentBtcPrice = getBTCLatestPrice();
-        if (((oldPosition.collateralAmount - _collateralAmount)  * MAXIMUM_LEVERAGE) < (oldPosition.sizeInTokens * currentBtcPrice * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION) revert InsufficientCollateral();
+        
         
         positions[msg.sender].collateralAmount -= _collateralAmount;
+       
+        if(isExceedMaxLeverage(msg.sender)) revert InsufficientCollateral();
+
         asset.safeTransfer(msg.sender, _collateralAmount);
+    }
+
+
+
+    function isExceedMaxLeverage(address _account) view public returns(bool) {
+        Position memory tempPositon = positions[_account];
+        int pnl = calculatePnLOfTrader(_account);
+        if(pnl > 0) {
+            tempPositon.collateralAmount += uint256(pnl);
+        } else {
+            tempPositon.collateralAmount -= pnl.abs();
+        }
+
+        return tempPositon.collateralAmount * MAXIMUM_LEVERAGE < (tempPositon.sizeInTokens * getBTCLatestPrice() * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION ? true : false;
+    }
+
+    function increaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
+        if(_isLong) {
+            totalOpenInterestLongInTokens += _sizeInTokens;
+            totalOpenInterestLongInUsd += _sizeInUsd;
+        } else {
+            totalOpenInterestShortInTokens += _sizeInTokens;
+            totalOpenInterestShortInUsd += _sizeInUsd;
+        }
+    }
+
+
+    function decreaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
+        if(_isLong) {
+            totalOpenInterestLongInTokens -= _sizeInTokens;
+            totalOpenInterestLongInUsd -= _sizeInUsd;
+        } else {
+            totalOpenInterestShortInTokens -= _sizeInTokens;
+            totalOpenInterestShortInUsd -= _sizeInUsd;
+        }
     }
 
     function getBTCLatestPrice() public view returns (uint256) {
