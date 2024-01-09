@@ -76,7 +76,9 @@ contract DummyPerpTest is Test {
         bool isLong, 
         uint256 sizeInTokens, 
         uint256 sizeInUsd, 
-        uint256 collateralAmount
+        uint256 collateralAmount,
+         ,
+        
         ) = dummyPerp.positions(trader);
         if (isOpen) {
             assertLe(sizeInUsd / collateralAmount, 15);

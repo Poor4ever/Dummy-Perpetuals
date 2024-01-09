@@ -13,12 +13,16 @@ import {Pool} from "./Pool.sol";
     // @param sizeInUsd the position's size in USD (USDC)
     // @param sizeInTokens the position's size in tokens (BTC)
     // @param collateralAmount the amount of collateralToken for collateral
+    // @param borrowingFees accumulated borrowing fees
+    // @param lastBorrowFeeUpdatedTimestamp last Update timestamp for borrowing fees 
     struct Position {
         bool isOpen;
         bool isLong;
         uint256 sizeInTokens;
         uint256 sizeInUsd;
         uint256 collateralAmount;
+        uint256 borrowingFees;
+        uint256 lastBorrowFeeUpdatedTimestamp;
     }
 
 contract DummyPerp {
@@ -42,9 +46,11 @@ contract DummyPerp {
     uint public constant MAXIMUM_LEVERAGE = 15 * BASIS_POINTS_DIVISOR;
     uint8 public constant MAX_UTILIZATIONPERCENTAGE = 80;
     uint public constant USDC_PRECISION = 1e6;
-    uint public constant FEED_PRICE_PRECISION = 1e8;
+    uint public constant FEED_PRICE_PRECISION = 1e8; 
     uint public constant LIQUIDATION_FEE_PERCENTAGE = 10;
-
+    uint public constant BORROWING_FEE_PRECISION = 1e30;
+    uint public constant BORROWING_PER_SHARE_PER_SECOND = BORROWING_FEE_PRECISION / 315_360_000;
+    
     uint256 public totalOpenInterestLongInTokens;
     uint256 public totalOpenInterestLongInUsd;
     uint256 public totalOpenInterestShortInTokens;
@@ -89,7 +95,9 @@ contract DummyPerp {
             _isLong,
             _sizeInTokensAmount,
             sizeInUsd,
-            _collateralAmount
+            _collateralAmount,
+            0,
+            block.timestamp
         );
 
         if(isExceedMaxLeverage(msg.sender)) revert ExceedMaximumLeverage();
@@ -100,19 +108,13 @@ contract DummyPerp {
         Position memory oldPosition = positions[msg.sender];
         if (!oldPosition.isOpen) revert NotExistPosition();
 
-        uint256 btcPrice = getBTCLatestPrice();
-        uint256 currentPostionValue = (btcPrice * oldPosition.sizeInTokens) / FEED_PRICE_PRECISION;
-        uint256 newPostionSizeInUsd = currentPostionValue + (_sizeInTokensAmount * btcPrice) / FEED_PRICE_PRECISION;
+        uint256 sizeInUsd = (_sizeInTokensAmount * getBTCLatestPrice()) / FEED_PRICE_PRECISION;
 
-        _increaseTotalOpenInterest(_sizeInTokensAmount, newPostionSizeInUsd, oldPosition.isLong);
+        _updateborrowingFees(msg.sender);
+        _increaseTotalOpenInterest(_sizeInTokensAmount, sizeInUsd, oldPosition.isLong);
 
-        positions[msg.sender] = Position(
-            true,
-            oldPosition.isOpen,
-            oldPosition.sizeInTokens += _sizeInTokensAmount,
-            newPostionSizeInUsd,
-            oldPosition.collateralAmount
-        );
+        positions[msg.sender].sizeInTokens += _sizeInTokensAmount;
+        positions[msg.sender].sizeInUsd += sizeInUsd;
 
         if(isExceedMaxLeverage(msg.sender)) revert ExceedMaximumLeverage();
     }
@@ -135,11 +137,12 @@ contract DummyPerp {
         int realizedPnl = totalPnl * int(_sizeInTokensAmout) / int(oldPosition.sizeInTokens);
         uint256 sizeInUsd = (_sizeInTokensAmout * getBTCLatestPrice()) / FEED_PRICE_PRECISION;
         
-        positions[msg.sender].sizeInTokens -= _sizeInTokensAmout;
-        positions[msg.sender].sizeInUsd -= sizeInUsd;
-        
+        _updateborrowingFees(msg.sender);
         _decreaseTotalOpenInterest(sizeInUsd, _sizeInTokensAmout, oldPosition.isLong);
-
+       
+        positions[msg.sender].sizeInTokens -= _sizeInTokensAmout;
+       
+        positions[msg.sender].sizeInUsd -= sizeInUsd;
         if(isExceedMaxLeverage(msg.sender)) revert InsufficientCollateral();
         
         if(realizedPnl > 0) {
@@ -162,6 +165,7 @@ contract DummyPerp {
     }
 
     function liquidatePosition(address _account) external {
+        if(!positions[msg.sender].isOpen) revert NotExistPosition();
         if(!isExceedMaxLeverage(_account)) revert NonLiquidable();
         Position memory tempPositon = positions[_account];
 
@@ -173,9 +177,16 @@ contract DummyPerp {
             asset.safeTransfer(address(pool), tempPositon.collateralAmount * USDC_PRECISION - liquditionFee);
         } else {
             uint256 liquditionFee = (pnl.abs() * LIQUIDATION_FEE_PERCENTAGE * USDC_PRECISION) / 100;
-            asset.safeTransfer(msg.sender, liquditionFee);
-            asset.safeTransfer(address(pool), pnl.abs() * USDC_PRECISION - liquditionFee);
-            asset.safeTransfer(_account, tempPositon.collateralAmount - pnl.abs());
+            
+            if(tempPositon.collateralAmount < liquditionFee + tempPositon.borrowingFees + pnl.abs()) {
+                asset.safeTransfer(msg.sender, liquditionFee);
+                asset.safeTransfer(address(pool), tempPositon.collateralAmount * USDC_PRECISION - liquditionFee);
+            } else{
+                asset.safeTransfer(msg.sender, liquditionFee);
+                asset.safeTransfer(address(pool), pnl.abs() * USDC_PRECISION - liquditionFee);
+                asset.safeTransfer(address(pool), tempPositon.borrowingFees * USDC_PRECISION);
+                asset.safeTransfer(_account, (tempPositon.collateralAmount - pnl.abs() - tempPositon.borrowingFees) * USDC_PRECISION);
+            }
         }
 
         delete positions[_account];
@@ -183,6 +194,7 @@ contract DummyPerp {
 
     function isExceedMaxLeverage(address _account) view public returns(bool) {
         Position memory tempPositon = positions[_account];
+        
         int pnl = calculatePnLOfTrader(_account);
         if(pnl > 0) {
             tempPositon.collateralAmount += uint256(pnl);
@@ -190,7 +202,11 @@ contract DummyPerp {
             tempPositon.collateralAmount -= pnl.abs();
         }
 
-        return tempPositon.collateralAmount * MAXIMUM_LEVERAGE < (tempPositon.sizeInTokens * getBTCLatestPrice() * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION ? true : false;
+        if(tempPositon.borrowingFees > tempPositon.collateralAmount) {
+            return true;
+        }
+
+        return (tempPositon.collateralAmount - tempPositon.borrowingFees) * MAXIMUM_LEVERAGE < (tempPositon.sizeInTokens * getBTCLatestPrice() * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION ? true : false;
     }
 
     function _increaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
@@ -213,6 +229,18 @@ contract DummyPerp {
             totalOpenInterestShortInUsd -= _sizeInUsd;
         }
     }
+
+
+    function _updateborrowingFees(address _account) internal {
+        Position memory tempPositon = positions[_account];
+        if(block.timestamp > tempPositon.lastBorrowFeeUpdatedTimestamp) {
+            uint secondsSincePositionUpdated = block.timestamp - tempPositon.lastBorrowFeeUpdatedTimestamp;
+            uint borrowing_fee = tempPositon.sizeInUsd * secondsSincePositionUpdated * BORROWING_FEE_PRECISION;
+            positions[_account].borrowingFees += borrowing_fee;
+            positions[_account].lastBorrowFeeUpdatedTimestamp = block.timestamp;
+        }
+    }
+
 
     function getBTCLatestPrice() public view returns (uint256) {
         (
