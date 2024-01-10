@@ -103,7 +103,7 @@ contract DummyPerp {
         if(isExceedMaxLeverage(msg.sender)) revert ExceedMaximumLeverage();
     }
 
-    function increasePostionSize(uint256 _sizeInTokensAmount) external checkLiquidity {
+    function increasePositionSize(uint256 _sizeInTokensAmount) external checkLiquidity {
         if(_sizeInTokensAmount == 0) revert ZeroInput();
         Position memory oldPosition = positions[msg.sender];
         if (!oldPosition.isOpen) revert NotExistPosition();

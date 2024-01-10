@@ -5,13 +5,13 @@ import {Test, console} from "forge-std/Test.sol";
 import {DummyPerp} from "../src/DummyPerp.sol";
 import {Pool} from "../src/Pool.sol";
 
-import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {USDCMock} from "./mocks//USDCMock.sol";
 import {BTCUSDPriceFeedMock as PriceFeed} from "./mocks/BTCUSDPriceFeedMock.sol";
 
 contract DummyPerpTest is Test {
     DummyPerp public dummyPerp;
     Pool public pool;
-    ERC20Mock public asset;
+    USDCMock public asset;
     PriceFeed public priceFeed;
  
     // uint256 mainnetFork;
@@ -24,7 +24,7 @@ contract DummyPerpTest is Test {
     function setUp() public {
         // mainnetFork = vm.createFork(MAINNET_RPC_URL);
         // vm.selectFork(mainnetFork);
-        asset = new ERC20Mock();
+        asset = new USDCMock();
         priceFeed = new PriceFeed();
         dummyPerp = new DummyPerp(address(asset), address(priceFeed));
         pool = Pool(dummyPerp.pool());
@@ -64,8 +64,6 @@ contract DummyPerpTest is Test {
         uint maxUtilizeliquidity = pool.totalAssets() * dummyPerp.MAX_UTILIZATIONPERCENTAGE() * dummyPerp.BASIS_POINTS_DIVISOR() / 100;
         uint maxpositionValue = collateralAmount * dummyPerp.MAXIMUM_LEVERAGE();
  
-
-
         address trader = traders[0];
         asset.mint(trader, collateralAmount);
         vm.startPrank(trader);
@@ -85,7 +83,62 @@ contract DummyPerpTest is Test {
         if (isOpen) {
             assertLe(sizeInUsd * dummyPerp.USDC_PRECISION(), collateralAmount * 15);
             assertLe(sizeInUsd * dummyPerp.USDC_PRECISION(), maxpositionValue);
+            if(isLong) {
+                assertEq(dummyPerp.totalOpenInterestLongInTokens(), sizeInTokens);
+                assertEq(dummyPerp.totalOpenInterestLongInUsd(), sizeInUsd);
+            } else {
+                assertEq(dummyPerp.totalOpenInterestShortInTokens(), sizeInTokens);
+                assertEq(dummyPerp.totalOpenInterestShortInUsd(), sizeInUsd);
+            }
         }
+
+    }
+
+    function testIncreasePositionSize() public {
+        int btcPrice = 50000;
+        priceFeed.changeBTCPrice(btcPrice * 1e8);
+        
+        uint liquidity = 1_000_000 * dummyPerp.USDC_PRECISION();
+        uint maximumUtilizeLiquidity = (1_000_000 * 80) / 100;
+        _liquidityProviderDeposit(liquidityProviders[0], liquidity);
+        
+        address trader = traders[0];
+        uint traderBalance = 500_000 * dummyPerp.USDC_PRECISION();
+        uint maximumPositionSize = traderBalance * 15;
+
+        asset.mint(trader, traderBalance);
+        vm.startPrank(trader);
+        asset.approve(address(dummyPerp), traderBalance);
+        dummyPerp.openPosition(1, uint(btcPrice) * dummyPerp.USDC_PRECISION(), true);
+        uint currentTraderPositionInTokens = 1;
+        uint currentTraderPositionSizeInUsd = uint(btcPrice) * 1;
+        
+        for (uint256 index = 0; index < 15; index++) {
+            currentTraderPositionInTokens++;
+            currentTraderPositionSizeInUsd += uint(btcPrice);
+
+            if(currentTraderPositionSizeInUsd >= maximumUtilizeLiquidity || currentTraderPositionSizeInUsd > maximumPositionSize) {
+                vm.expectRevert();
+                currentTraderPositionInTokens--;
+                currentTraderPositionSizeInUsd -= uint(btcPrice);
+                }
+            dummyPerp.increasePositionSize(1);
+
+            (bool isOpen, 
+            bool isLong, 
+            uint256 sizeInTokens, 
+            uint256 sizeInUsd, 
+            uint256 collateralAmount,
+            ,
+            
+            ) = dummyPerp.positions(trader);
+            assertEq(sizeInTokens, currentTraderPositionInTokens);
+            assertEq(sizeInUsd, currentTraderPositionSizeInUsd);
+            assertEq(dummyPerp.totalOpenInterestLongInTokens(), sizeInTokens);
+            assertEq(dummyPerp.totalOpenInterestLongInUsd(), sizeInUsd);
+        }
+
+        vm.stopPrank();
     }
 
 
