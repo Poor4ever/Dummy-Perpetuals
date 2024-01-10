@@ -44,3 +44,4 @@ The second mission focuses on implementing the rest of the basic functionality o
 ## Know Issues 
 
 Precision Loss
+Some functions did not take into account the precision of USDC
