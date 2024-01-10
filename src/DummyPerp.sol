@@ -71,14 +71,14 @@ contract DummyPerp {
         _;
         uint256 maxUtilizeLiquidity = getMaxUtilizeLiquidity();
         if (
-            totalOpenInterestShortInUsd > maxUtilizeLiquidity ||
-            totalOpenInterestLongInUsd > maxUtilizeLiquidity
+            totalOpenInterestShortInUsd * USDC_PRECISION > maxUtilizeLiquidity ||
+            totalOpenInterestLongInUsd * USDC_PRECISION > maxUtilizeLiquidity
         ) {
             revert ExceedMaximumUtilizeLiquidity();
         }
     }
 
-    function openPostion(uint256 _sizeInTokensAmount, uint256 _collateralAmount, bool _isLong) external checkLiquidity {
+    function openPosition(uint256 _sizeInTokensAmount, uint256 _collateralAmount, bool _isLong) external checkLiquidity {
         if (positions[msg.sender].isOpen) revert AlreadyExistPosition();
         if(_sizeInTokensAmount == 0 || _collateralAmount == 0) revert ZeroInput();
 
@@ -167,30 +167,35 @@ contract DummyPerp {
     function liquidatePosition(address _account) external {
         if(!positions[msg.sender].isOpen) revert NotExistPosition();
         if(!isExceedMaxLeverage(_account)) revert NonLiquidable();
+
+        _updateborrowingFees(_account);
+
         Position memory tempPositon = positions[_account];
 
         int pnl = calculatePnLOfTrader(_account);
-        
-        if(tempPositon.collateralAmount < pnl.abs()) {
-            uint256 liquditionFee = (tempPositon.collateralAmount * LIQUIDATION_FEE_PERCENTAGE * USDC_PRECISION) / 100;
+        uint256 loss = pnl.abs() * USDC_PRECISION;
+        uint256 liquditionFee;
+
+        if(tempPositon.collateralAmount < loss) {
+            liquditionFee = (tempPositon.collateralAmount * LIQUIDATION_FEE_PERCENTAGE) / 100;
             asset.safeTransfer(msg.sender, liquditionFee);
-            asset.safeTransfer(address(pool), tempPositon.collateralAmount * USDC_PRECISION - liquditionFee);
-        } else {
-            uint256 liquditionFee = (pnl.abs() * LIQUIDATION_FEE_PERCENTAGE * USDC_PRECISION) / 100;
-            
-            if(tempPositon.collateralAmount < liquditionFee + tempPositon.borrowingFees + pnl.abs()) {
+            asset.safeTransfer(address(pool), tempPositon.collateralAmount - liquditionFee);
+        } else if (tempPositon.collateralAmount < liquditionFee + tempPositon.borrowingFees + loss) {
                 asset.safeTransfer(msg.sender, liquditionFee);
-                asset.safeTransfer(address(pool), tempPositon.collateralAmount * USDC_PRECISION - liquditionFee);
+                asset.safeTransfer(address(pool), tempPositon.collateralAmount - liquditionFee);
             } else{
+                liquditionFee = (loss * LIQUIDATION_FEE_PERCENTAGE) / 100;
                 asset.safeTransfer(msg.sender, liquditionFee);
-                asset.safeTransfer(address(pool), pnl.abs() * USDC_PRECISION - liquditionFee);
-                asset.safeTransfer(address(pool), tempPositon.borrowingFees * USDC_PRECISION);
-                asset.safeTransfer(_account, (tempPositon.collateralAmount - pnl.abs() - tempPositon.borrowingFees) * USDC_PRECISION);
+                asset.safeTransfer(address(pool), loss - liquditionFee);
+                asset.safeTransfer(address(pool), tempPositon.borrowingFees);
+                asset.safeTransfer(_account, (tempPositon.collateralAmount - loss - tempPositon.borrowingFees));
             }
+       
+        delete positions[_account];
         }
 
-        delete positions[_account];
-    }
+        
+
 
     function isExceedMaxLeverage(address _account) view public returns(bool) {
         Position memory tempPositon = positions[_account];
@@ -206,7 +211,7 @@ contract DummyPerp {
             return true;
         }
 
-        return (tempPositon.collateralAmount - tempPositon.borrowingFees) * MAXIMUM_LEVERAGE < (tempPositon.sizeInTokens * getBTCLatestPrice() * BASIS_POINTS_DIVISOR) / FEED_PRICE_PRECISION ? true : false;
+        return ((tempPositon.collateralAmount - tempPositon.borrowingFees) * MAXIMUM_LEVERAGE)  < (tempPositon.sizeInTokens * getBTCLatestPrice() * BASIS_POINTS_DIVISOR * USDC_PRECISION) / FEED_PRICE_PRECISION ? true : false;
     }
 
     function _increaseTotalOpenInterest(uint256 _sizeInTokens, uint256 _sizeInUsd, bool _isLong) internal {
