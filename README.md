@@ -19,10 +19,10 @@ The first mission focuses on implementing roughly 50% of the basic functionality
 | ------------------------------------------------------------ | -------------- | ------- |
 | Liquidity Providers can deposit and withdraw liquidity.      | ✅              | ✅       |
 | A way to get the realtime price of the asset being traded.   | ✅              | ✅       |
-| Traders can open a perpetual position for BTC, with a given size and collateral. | ✅              |         |
-| Traders can increase the size of a perpetual position.       | ✅              |         |
-| Traders can increase the collateral of a perpetual position. | ✅              |         |
-| Traders cannot utilize more than a configured percentage of the deposited liquidity. | ✅              |         |
+| Traders can open a perpetual position for BTC, with a given size and collateral. | ✅              | ✅       |
+| Traders can increase the size of a perpetual position.       | ✅              | ✅       |
+| Traders can increase the collateral of a perpetual position. | ✅              | ✅       |
+| Traders cannot utilize more than a configured percentage of the deposited liquidity. | ✅              | ✅       |
 | Liquidity providers cannot withdraw liquidity that is reserved for positions. | ✅              |         |
 
 ### Mission #2
@@ -43,6 +43,8 @@ The second mission focuses on implementing the rest of the basic functionality o
 
 ## Know Issues 
 
-Precision Loss
+Precision Loss.
 
-Some functions did not take into account the precision of USDC
+Some functions did not take into account the precision of USDC.
+
+Some edge cases may result in traders being unable to realize PNL.

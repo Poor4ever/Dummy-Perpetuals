@@ -141,6 +141,37 @@ contract DummyPerpTest is Test {
         vm.stopPrank();
     }
 
+    function testIncreaseCollateral(uint256 collateralAmount) public {
+        uint traderInitialBalance = 500_00 * dummyPerp.USDC_PRECISION();
+        uint256 addCollateralAmount = bound(collateralAmount, 1, type(uint256).max - traderInitialBalance);
+        uint liquidity = 1_000_000 * dummyPerp.USDC_PRECISION();
+        _liquidityProviderDeposit(liquidityProviders[0], liquidity);
+        address trader = traders[0];
+       
+        asset.mint(trader, addCollateralAmount + traderInitialBalance);
+
+        vm.startPrank(trader);
+        asset.approve(address(dummyPerp), traderInitialBalance + addCollateralAmount);
+        vm.expectRevert();
+        dummyPerp.increaseCollateral(addCollateralAmount);
+
+        dummyPerp.openPosition(1, traderInitialBalance, false);
+        dummyPerp.increaseCollateral(addCollateralAmount);
+
+        (bool isOpen, 
+        bool isLong, 
+        uint256 sizeInTokens, 
+        uint256 sizeInUsd, 
+        uint256 collateralAmount,
+         ,
+        
+        ) = dummyPerp.positions(trader);
+        assertEq(asset.balanceOf(address(dummyPerp)), traderInitialBalance + addCollateralAmount);
+        assertEq(collateralAmount, traderInitialBalance + addCollateralAmount);
+        vm.stopPrank();
+
+    }
+
 
     function testOraclePriceFeed(int pric) public {
         int price = bound(pric,43000, 45000) * 1e8;
